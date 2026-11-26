@@ -1,0 +1,212 @@
+<!DOCTYPE html><html><head>
+<meta charset='UTF-8'>
+<meta name='viewport' content='width=device-width, initial-scale=1.0'>
+<title>Smart Power Strip</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',Tahoma,sans-serif;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);min-height:100vh;padding:20px}
+.container{max-width:960px;margin:0 auto}
+.header{text-align:center;color:white;margin-bottom:24px}
+.header h1{font-size:30px;margin-bottom:4px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px}
+.card{background:white;border-radius:12px;padding:22px;box-shadow:0 10px 30px rgba(0,0,0,.2)}
+.card h2{color:#333;font-size:19px;margin-bottom:16px;border-bottom:3px solid #667eea;padding-bottom:8px}
+.status-grid{display:grid;gap:10px}
+.status-item{display:flex;justify-content:space-between;align-items:center;padding:9px;background:#f5f5f5;border-radius:6px}
+.status-label{font-weight:600;color:#555}
+.status-value{font-size:14px;color:#666;font-weight:500}
+.badge{display:inline-block;padding:5px 12px;border-radius:20px;font-size:12px;font-weight:600;text-transform:uppercase;color:white}
+.badge-on{background:#4CAF50}.badge-off{background:#f44336}
+.badge-online{background:#2196F3}.badge-offline{background:#ff9800}
+.badge-idle{background:#9e9e9e}
+.btn{padding:11px 20px;border:none;border-radius:6px;cursor:pointer;font-weight:600;font-size:14px;margin:4px;text-decoration:none;display:inline-block;text-align:center}
+.btn-on{background:#4CAF50;color:white}.btn-off{background:#f44336;color:white}
+.btn-start{background:#667eea;color:white}
+.btn-group{display:flex;gap:10px;flex-wrap:wrap}
+.input-group{display:flex;flex-direction:column}
+.input-group label{font-weight:600;margin-bottom:5px;color:#333;font-size:13px}
+input[type=number],input[type=time]{padding:8px;border:2px solid #ddd;border-radius:6px;font-size:14px}
+.logs-area{background:#1a1a1a;color:#0f0;padding:12px;border-radius:6px;max-height:260px;overflow-y:auto;font-family:monospace;font-size:11px;margin-top:10px}
+.log-line{padding:3px 0;border-bottom:1px solid #333;white-space:nowrap}
+.full-width{grid-column:1/-1}
+.timer-input{display:flex;gap:10px;margin:10px 0}
+.timer-input .input-group{flex:1}
+.timer-input input{width:100%}
+.sched{border:1px solid #e0e0e0;border-radius:8px;padding:10px;margin-bottom:10px}
+.sched-top{display:flex;flex-wrap:wrap;gap:14px;align-items:center;font-size:14px}
+.days{display:flex;gap:10px;flex-wrap:wrap;margin:8px 0;font-size:13px}
+.note{font-size:12px;color:#777;margin-top:8px}
+.banner{display:none;background:#fff3cd;color:#664d03;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:14px;font-weight:600;text-align:center}
+</style></head><body>
+<div class='container'>
+<div class='banner' id='cloudBanner'></div>
+<div class='header'><h1>Smart Power Strip</h1><p>Manual + Schedule + Motion control (remote)</p></div>
+<div class='grid'>
+
+<div class='card'><h2>Status</h2><div class='status-grid'>
+<div class='status-item'><span class='status-label'>Relay</span><span class='badge' id='relayBadge'>OFF</span></div>
+<div class='status-item'><span class='status-label'>Device</span><span class='badge' id='wifiBadge'>OFFLINE</span></div>
+<div class='status-item'><span class='status-label'>Motion</span><span class='badge badge-idle' id='pirBadge'>--</span></div>
+<div class='status-item'><span class='status-label'>PIR auto-off in</span><span class='status-value' id='pirOffIn'>--</span></div>
+<div class='status-item'><span class='status-label'>Timer left</span><span class='status-value' id='timerLeft'>--</span></div>
+<div class='status-item'><span class='status-label'>Voltage</span><span class='status-value' id='voltageValue'>-- V</span></div>
+<div class='status-item'><span class='status-label'>Battery</span><span class='status-value' id='batteryValue'>-- V</span></div>
+<div class='status-item'><span class='status-label'>Time</span><span class='status-value' id='timeValue'>--:--:--</span></div>
+<div class='status-item'><span class='status-label'>Main power</span><span class='badge' id='mainPowerBadge'>--</span></div>
+<div class='status-item'><span class='status-label'>Dongle</span><span class='badge' id='dongleBadge'>--</span></div>
+<div class='status-item'><span class='status-label'>Dongle phase</span><span class='status-value' id='donglePhaseValue'>--</span></div>
+<div class='status-item'><span class='status-label'>Next dongle wake</span><span class='status-value' id='dongleNextValue'>--</span></div>
+</div></div>
+
+<div class='card'><h2>Dongle / Modem (GPIO4)</h2>
+<div style='margin:8px 0'><label><input type='checkbox' id='dongleAuto' onchange='saveDongle()'> Auto wake schedule (ESP32 controls the dongle)</label></div>
+<div class='input-group'><label>Wake interval (minutes)</label>
+<input type='number' id='dongleInterval' min='1' max='1440' value='30' onchange='saveDongle()'></div>
+<div class='input-group' style='margin-top:8px'><label>Stay on / connected for (seconds)</label>
+<input type='number' id='dongleOnSec' min='10' max='3600' value='120' onchange='saveDongle()'></div>
+<div class='input-group' style='margin-top:8px'><label>Main power present above (V, from VSENSE)</label>
+<input type='number' id='mainThreshold' min='0' step='0.1' value='5' onchange='saveDongle()'></div>
+<div class='btn-group' style='margin-top:10px'>
+<button class='btn btn-on' onclick='setDongle(1)' style='flex:1'>DONGLE ON</button>
+<button class='btn btn-off' onclick='setDongle(0)' style='flex:1'>DONGLE OFF</button>
+</div>
+<p class='note'>Manual ON/OFF turns auto mode off. While auto is on, the ESP32 powers the dongle, connects, checks/saves data, then powers it off until the next wake - but only while main power is present; if main power is lost, the dongle stays off.</p></div>
+
+<div class='card'><h2>Manual Control</h2>
+<div class='btn-group'>
+<button class='btn btn-on' onclick='setRelay(1)' style='flex:1'>TURN ON</button>
+<button class='btn btn-off' onclick='setRelay(0)' style='flex:1'>TURN OFF</button>
+</div>
+<p class='note'>Works any time, also between schedule times.</p></div>
+
+<div class='card'><h2>Timer</h2>
+<div class='timer-input'>
+<div class='input-group'><label>Hours</label><input type='number' id='timerHours' min='0' max='23' value='1'></div>
+<div class='input-group'><label>Minutes</label><input type='number' id='timerMins' min='0' max='59' value='0'></div>
+</div>
+<button class='btn btn-start' onclick='startTimer()' style='width:100%'>START (relay ON, then OFF)</button></div>
+
+<div class='card'><h2>Motion (PIR)</h2>
+<div style='margin:8px 0'><label><input type='checkbox' id='pirEnabled' onchange='savePIR()'> Enable motion auto-off</label></div>
+<div style='margin:8px 0'><label><input type='checkbox' id='pirAutoOn' onchange='savePIR()'> Turn ON when motion is detected (after a PIR auto-off)</label></div>
+<div class='input-group'><label>Turn OFF after no motion for (minutes)</label>
+<input type='number' id='pirTimeoutMin' min='1' max='1440' value='10' onchange='savePIR()'></div></div>
+
+<div class='card full-width'><h2>ON / OFF Schedules</h2>
+<div id='schedList'>Loading...</div>
+<p class='note'>Relay switches ON when the ON time is reached and OFF when the OFF time is reached. You can still use manual control in between. OFF earlier than ON = overnight (e.g. 22:00 to 06:00).</p></div>
+
+<div class='card full-width'><h2>Data &amp; Event Log</h2>
+<a class='btn btn-on' href='/download/csv' download>Download All Data (CSV)</a>
+<a class='btn btn-start' id='oldLink' href='/download/csv_old' download style='display:none'>Download Older Data (CSV)</a>
+<button class='btn btn-start' onclick='loadLogs()'>Refresh</button>
+<div class='logs-area' id='logsArea'>Waiting for events...</div></div>
+
+</div></div>
+<script>
+var DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+var pirLoaded=false;
+function post(url,body){return fetch(url,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body});}
+function ago(s){if(s<60)return s+'s';if(s<3600)return Math.floor(s/60)+'m';return Math.floor(s/3600)+'h '+Math.floor((s%3600)/60)+'m';}
+function mmss(s){if(s<0)return '--';var m=Math.floor(s/60),x=s%60;return m+'m '+(x<10?'0':'')+x+'s';}
+function updateStatus(){
+ fetch('/api/status').then(function(r){return r.json();}).then(function(d){
+  var bn=document.getElementById('cloudBanner'),msg='';
+  if(!d.has_data){msg='Waiting for the device to connect for the first time...';}
+  else if(!d.device_online){msg='Device offline - last seen '+ago(d.last_seen_s)+' ago. Commands are queued and run when it reconnects.';}
+  if(d.pending>0){msg+=(msg?' ':'')+d.pending+' command(s) waiting for the device.';}
+  bn.textContent=msg;bn.style.display=msg?'block':'none';
+  if(!d.has_data)return;
+  var rb=document.getElementById('relayBadge');
+  rb.textContent=d.relay?'ON':'OFF';rb.className='badge '+(d.relay?'badge-on':'badge-off');
+  var wb=document.getElementById('wifiBadge');
+  wb.textContent=d.device_online?'ONLINE':'OFFLINE';wb.className='badge '+(d.device_online?'badge-online':'badge-offline');
+  var pb=document.getElementById('pirBadge');
+  if(!d.pir_enabled){pb.textContent='DISABLED';pb.className='badge badge-idle';}
+  else if(d.pir_motion){pb.textContent='MOTION';pb.className='badge badge-on';}
+  else{pb.textContent='NO MOTION';pb.className='badge badge-idle';}
+  document.getElementById('pirOffIn').textContent=(d.pir_off_in>=0)?mmss(d.pir_off_in):'--';
+  document.getElementById('timerLeft').textContent=d.timer_running?mmss(d.timer_left):'--';
+  document.getElementById('voltageValue').textContent=Math.round(d.voltage)+' V';
+  document.getElementById('batteryValue').textContent=d.battery_voltage.toFixed(2)+' V';
+  document.getElementById('timeValue').textContent=d.time.split(' ')[1];
+  document.getElementById('oldLink').style.display=d.has_old_log?'inline-block':'none';
+  var mpb=document.getElementById('mainPowerBadge');
+  mpb.textContent=d.main_power?'ON':'OFF';mpb.className='badge '+(d.main_power?'badge-online':'badge-offline');
+  var dgb=document.getElementById('dongleBadge');
+  dgb.textContent=d.dongle?'ON':'OFF';dgb.className='badge '+(d.dongle?'badge-on':'badge-off');
+  document.getElementById('donglePhaseValue').textContent=d.dongle_auto?PHASE_NAMES[d.dongle_phase]:'Manual';
+  document.getElementById('dongleNextValue').textContent=(d.dongle_next_in>=0)?mmss(d.dongle_next_in):'--';
+  if(!donglePirLoaded){
+   donglePirLoaded=true;
+   document.getElementById('dongleAuto').checked=d.dongle_auto;
+   document.getElementById('dongleInterval').value=d.dongle_interval_min;
+   document.getElementById('dongleOnSec').value=d.dongle_on_sec;
+   document.getElementById('mainThreshold').value=d.main_power_threshold;
+  }
+  if(!pirLoaded){
+   pirLoaded=true;
+   document.getElementById('pirEnabled').checked=d.pir_enabled;
+   document.getElementById('pirAutoOn').checked=d.pir_autoon;
+   document.getElementById('pirTimeoutMin').value=Math.round(d.pir_timeout/60);
+  }
+ }).catch(function(){});
+}
+function setRelay(s){post('/api/relay','state='+s).then(function(){setTimeout(updateStatus,300);});}
+var PHASE_NAMES=['Sleeping','Warming up','Active'];
+var donglePirLoaded=false;
+function setDongle(s){post('/api/dongle','state='+s).then(function(){setTimeout(updateStatus,300);});}
+function saveDongle(){
+ var au=document.getElementById('dongleAuto').checked?1:0;
+ var iv=parseInt(document.getElementById('dongleInterval').value)||30;
+ var on=parseInt(document.getElementById('dongleOnSec').value)||120;
+ var th=parseFloat(document.getElementById('mainThreshold').value)||5;
+ post('/api/dongle','auto='+au+'&interval_min='+iv+'&on_sec='+on+'&threshold='+th);
+}
+function startTimer(){
+ var h=parseInt(document.getElementById('timerHours').value)||0;
+ var m=parseInt(document.getElementById('timerMins').value)||0;
+ if(h===0&&m===0){alert('Set timer');return;}
+ post('/api/timer','hours='+h+'&mins='+m).then(function(){setTimeout(updateStatus,300);});
+}
+function savePIR(){
+ var en=document.getElementById('pirEnabled').checked?1:0;
+ var ao=document.getElementById('pirAutoOn').checked?1:0;
+ var t=(parseInt(document.getElementById('pirTimeoutMin').value)||10)*60;
+ post('/api/pir','enabled='+en+'&autoon='+ao+'&timeout='+t);
+}
+function loadSchedules(){
+ fetch('/api/schedules').then(function(r){return r.json();}).then(function(list){
+  var h='';
+  list.forEach(function(s){
+   h+='<div class="sched"><div class="sched-top"><label><input type="checkbox" id="se'+s.id+'"'+(s.enabled?' checked':'')+'> <b>Schedule '+(s.id+1)+'</b></label>';
+   h+='<span>ON <input type="time" id="son'+s.id+'" value="'+s.on+'"></span>';
+   h+='<span>OFF <input type="time" id="soff'+s.id+'" value="'+s.off+'"></span></div><div class="days">';
+   for(var d=0;d<7;d++){h+='<label><input type="checkbox" id="sd'+s.id+'_'+d+'"'+(((s.days>>d)&1)?' checked':'')+'> '+DAYS[d]+'</label>';}
+   h+='</div><button class="btn btn-start" onclick="saveSchedule('+s.id+')">Save</button></div>';
+  });
+  document.getElementById('schedList').innerHTML=h;
+ });
+}
+function saveSchedule(i){
+ var days=0;
+ for(var d=0;d<7;d++){if(document.getElementById('sd'+i+'_'+d).checked)days|=(1<<d);}
+ var en=document.getElementById('se'+i).checked?1:0;
+ var on=document.getElementById('son'+i).value;
+ var off=document.getElementById('soff'+i).value;
+ if(!on||!off){alert('Set ON and OFF time');return;}
+ post('/api/schedule','id='+i+'&enabled='+en+'&on='+encodeURIComponent(on)+'&off='+encodeURIComponent(off)+'&days='+days)
+  .then(function(r){return r.json();}).then(function(){alert('Schedule '+(i+1)+' saved');});
+}
+function loadLogs(){
+ fetch('/api/logs').then(function(r){return r.text();}).then(function(t){
+  var lines=t.split('\n').filter(function(l){return l.trim()&&l.indexOf('Timestamp')!==0;});
+  lines.reverse();
+  document.getElementById('logsArea').innerHTML=lines.map(function(l){
+   return '<div class="log-line">'+l.replace(/</g,'&lt;')+'</div>';}).join('')||'No events yet';
+ });
+}
+setInterval(updateStatus,2000);updateStatus();
+loadSchedules();
+loadLogs();setInterval(loadLogs,10000);
+</script></body></html>
