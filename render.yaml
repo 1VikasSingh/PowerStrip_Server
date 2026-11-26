@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: smart-power-strip
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    healthCheckPath: /healthz
+    envVars:
+      - key: DEVICE_KEY
+        generateValue: true
+      - key: DASH_USER
+        value: admin
+      - key: DASH_PASS
+        sync: false
