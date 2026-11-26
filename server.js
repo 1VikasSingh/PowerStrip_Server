@@ -4,9 +4,9 @@ const express = require('express');
 const crypto = require('crypto');
 const path = require('path');
 
-const DEVICE_KEY = process.env.DEVICE_KEY;
+const DEVICE_KEY = process.env.DEVICE_KEY || 'Power_Strip_001';
 const DASH_USER = process.env.DASH_USER || 'admin';
-const DASH_PASS = process.env.DASH_PASS;
+const DASH_PASS = process.env.DASH_PASS || 'Sparsa@123';
 const PORT = process.env.PORT || 3000;
 
 if (!DEVICE_KEY || !DASH_PASS) {
